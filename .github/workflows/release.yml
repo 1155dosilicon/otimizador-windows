@@ -34,4 +34,4 @@ jobs:
         run: |
           gh release view $env:TAG 2>$null
           if ($LASTEXITCODE -ne 0) { gh release create $env:TAG --title $env:TAG --generate-notes }
-          gh release upload $env:TAG otimizador.exe otimizador.ps1 --clobber
+          gh release upload $env:TAG otimizador.exe otimizador.ps1 reverter-servicos.ps1 --clobber

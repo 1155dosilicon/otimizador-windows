@@ -22,34 +22,32 @@ try {
     Write-Warning "    Erro ao desativar mitigacoes: $($_.Exception.Message)"
 }
 
-# 2. DESATIVAR COMPRESSAO DE MEMORIA
-Write-Host "[>] Desativando compressao de memoria..." -ForegroundColor Yellow
-if (Get-Module -ListAvailable -Name MMAgent -ErrorAction SilentlyContinue) {
-    $savedStartMode = $null
-    try {
-        # Obtem o estado atual do SysMain (Superfetch) -- necessario para o MMAgent funcionar
-        $sysMainCim = Get-CimInstance -ClassName Win32_Service -Filter "Name='SysMain'" -ErrorAction SilentlyContinue
-        if ($sysMainCim) {
-            $savedStartMode = $sysMainCim.StartMode
-            if ($sysMainCim.StartMode -eq 'Disabled') {
-                Set-Service -Name SysMain -StartupType Manual -ErrorAction SilentlyContinue
-                Start-Service -Name SysMain -ErrorAction SilentlyContinue | Out-Null
-            }
-        }
-        # Executa a desativacao
-        Import-Module MMAgent -Force -ErrorAction Stop
-        Disable-MMAgent -MemoryCompression -ErrorAction Stop
-        Write-Host "    Compressao de memoria desativada." -ForegroundColor Green
-    } catch {
-        Write-Warning "    Erro na compressao de memoria: $($_.Exception.Message)"
-    }
-    # Restaura o estado original do SysMain
-    if ($sysMainCim -and $savedStartMode -eq 'Disabled') {
+# 2. SYSMAIN (SUPERFETCH) CONFORME O DISCO
+# HDD: o SysMain acelera bastante (pre-carrega apps) -> mantido.
+# SSD: o ganho e minimo, mas o SysMain tambem gerencia a COMPRESSAO DE MEMORIA,
+#      que e importante com pouca RAM -> so desativa com SSD e RAM >= $ramMinimaGB.
+Write-Host "[>] Verificando SysMain (Superfetch)..." -ForegroundColor Yellow
+$ramMinimaGB = 16
+try {
+    $discoSistema = (Get-Partition -DriveLetter $env:SystemDrive[0] -ErrorAction Stop).DiskNumber
+    $fisico = Get-PhysicalDisk -ErrorAction Stop | Where-Object { $_.DeviceId -eq "$discoSistema" } | Select-Object -First 1
+    $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+    $ehSSD = $fisico -and ($fisico.MediaType -eq 'SSD' -or $fisico.BusType -eq 'NVMe')
+    $ehHDD = $fisico -and $fisico.MediaType -eq 'HDD'
+
+    if ($ehSSD -and $ramGB -ge $ramMinimaGB) {
         Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue
-        Set-Service -Name SysMain -StartupType Disabled -ErrorAction SilentlyContinue
+        Set-Service -Name SysMain -StartupType Disabled -ErrorAction Stop
+        Write-Host "    SSD + $ramGB GB de RAM: SysMain desativado." -ForegroundColor Green
+    } elseif ($ehSSD) {
+        Write-Host "    SSD, mas so $ramGB GB de RAM: SysMain mantido (compressao de memoria)." -ForegroundColor Green
+    } elseif ($ehHDD) {
+        Write-Host "    HDD detectado: SysMain mantido (acelera o disco)." -ForegroundColor Green
+    } else {
+        Write-Host "    Tipo de disco nao identificado: SysMain mantido por seguranca." -ForegroundColor Yellow
     }
-} else {
-    Write-Warning "    Modulo MMAgent nao encontrado -- compressao de memoria ignorada."
+} catch {
+    Write-Warning "    Erro ao verificar o disco/SysMain: $($_.Exception.Message)"
 }
 
 # 3. DESATIVAR TELEMETRIA E COLETA DE DADOS
@@ -82,6 +80,7 @@ try {
     Set-ItemProperty -Path $searchPath -Name "CortanaConsent" -Value 0 -Type DWord -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $explorerPolicyPath -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -ErrorAction Stop
     Set-ItemProperty -Path $searchPolicyPath -Name "DisableCloudSearch" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path $searchPolicyPath -Name "AllowCortana" -Value 0 -Type DWord -ErrorAction SilentlyContinue
     Write-Host "    Bing removido da pesquisa local." -ForegroundColor Green
 } catch {
     Write-Warning "    Erro ao desativar Bing: $($_.Exception.Message)"
@@ -107,18 +106,7 @@ try {
     Write-Warning "    Erro no GameDVR: $($_.Exception.Message)"
 }
 
-# 6. DESATIVAR CORTANA
-Write-Host "[>] Desativando Cortana..." -ForegroundColor Yellow
-$cortanaPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
-if (!(Test-Path $cortanaPath)) { New-Item -Path $cortanaPath -Force | Out-Null }
-try {
-    Set-ItemProperty -Path $cortanaPath -Name "AllowCortana" -Value 0 -Type DWord -ErrorAction Stop
-    Write-Host "    Cortana desativada." -ForegroundColor Green
-} catch {
-    Write-Warning "    Erro ao desativar Cortana: $($_.Exception.Message)"
-}
-
-# 7. DESATIVAR SERVICOS XBOX
+# 6. DESATIVAR SERVICOS XBOX
 Write-Host "[>] Desativando servicos Xbox..." -ForegroundColor Yellow
 $servicosXbox = @("XblAuthManager","XblGameSave","XboxNetApiSvc","XboxGipSvc")
 foreach ($svc in $servicosXbox) {
@@ -127,7 +115,7 @@ foreach ($svc in $servicosXbox) {
 }
 Write-Host "    Servicos Xbox desativados." -ForegroundColor Green
 
-# 8. DESATIVAR DICAS E SUGESTOES DO WINDOWS
+# 7. DESATIVAR DICAS E SUGESTOES DO WINDOWS
 Write-Host "[>] Desativando dicas e sugestoes..." -ForegroundColor Yellow
 $tipsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
 if (!(Test-Path $tipsPath)) { New-Item -Path $tipsPath -Force | Out-Null }
@@ -143,7 +131,7 @@ try {
     Write-Warning "    Erro ao desativar dicas: $($_.Exception.Message)"
 }
 
-# 9. DESATIVAR HIBERNACAO (Libera GBs de espaco)
+# 8. DESATIVAR HIBERNACAO (Libera GBs de espaco)
 Write-Host "[>] Desativando hibernacao..." -ForegroundColor Yellow
 $hibernar = Start-Process -FilePath "powercfg" -ArgumentList "-h off" -Wait -NoNewWindow -PassThru
 if ($hibernar.ExitCode -eq 0) {
@@ -152,7 +140,7 @@ if ($hibernar.ExitCode -eq 0) {
     Write-Warning "    Erro ao desativar hibernacao (codigo $($hibernar.ExitCode))."
 }
 
-# 10. DESATIVAR OTIMIZACAO DE ENTREGA (P2P de updates)
+# 9. DESATIVAR OTIMIZACAO DE ENTREGA (P2P de updates)
 Write-Host "[>] Desativando Otimizacao de Entrega (P2P)..." -ForegroundColor Yellow
 $deliveryOptPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
 if (!(Test-Path $deliveryOptPath)) { New-Item -Path $deliveryOptPath -Force | Out-Null }
@@ -163,28 +151,7 @@ try {
     Write-Warning "    Erro no Delivery Optimization: $($_.Exception.Message)"
 }
 
-# 11. AJUSTES DE REDE (TCP Autotuning)
-Write-Host "[>] Aplicando ajustes de rede..." -ForegroundColor Yellow
-$netOk = $true
-$netshCommands = @(
-    @("int", "tcp", "set", "global", "autotuninglevel=normal", "TCP Autotuning"),
-    @("int", "tcp", "set", "global", "rss=enabled", "RSS (Receive Side Scaling)")
-)
-foreach ($cmd in $netshCommands) {
-    $netshArgs = $cmd[0..4]
-    $label = $cmd[5]
-    $result = netsh $netshArgs 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "    Falha ao configurar ${label}: $result"
-        $netOk = $false
-    }
-}
-# Chimney removido: obsoleto/deprecated desde o Windows 10 1709
-if ($netOk) {
-    Write-Host "    Ajustes de rede aplicados." -ForegroundColor Green
-}
-
-# 12. DESATIVAR APPS EM SEGUNDO PLANO
+# 10. DESATIVAR APPS EM SEGUNDO PLANO
 Write-Host "[>] Desativando apps em segundo plano..." -ForegroundColor Yellow
 $bgAppsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications"
 if (!(Test-Path $bgAppsPath)) { New-Item -Path $bgAppsPath -Force | Out-Null }
@@ -195,40 +162,44 @@ try {
     Write-Warning "    Erro nos apps em segundo plano: $($_.Exception.Message)"
 }
 
-# 13. PLANO DE ENERGIA - ALTO DESEMPENHO
-Write-Host "[>] Ativando plano de Alto Desempenho..." -ForegroundColor Yellow
-$guidAltoDesempenho = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
-$planoAtivado = $false
+# 11. PLANO DE ENERGIA - DESEMPENHO MAXIMO (Ultimate Performance)
+Write-Host "[>] Ativando plano Desempenho Maximo..." -ForegroundColor Yellow
+$guidMaximo = "e9a42b02-d5df-448d-aa00-03f14749eb61"
+$guidAlto   = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+$regexGuid  = '([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})'
+$planoAtivado = $null
 
-# Tenta GUID padrao primeiro
-$result = powercfg -setactive $guidAltoDesempenho 2>&1
-if ($LASTEXITCODE -eq 0) {
-    $planoAtivado = $true
-} else {
-    # Tenta duplicar o esquema padrao (caso esteja oculto em notebooks)
-    powercfg -duplicatescheme $guidAltoDesempenho 2>&1 | Out-Null
-    $result = powercfg -setactive $guidAltoDesempenho 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        $planoAtivado = $true
-    } else {
-        # Busca dinamicamente por "Alto desempenho", "High performance" ou "Ultimate Performance"
-        $planos = powercfg -list 2>&1
-        $linha = $planos | Where-Object { $_ -match "Alto desempenho|High performance|Ultimate Performance" } | Select-Object -First 1
-        if ($linha -and $linha -match '([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})') {
-            $guid = $Matches[1]
-            powercfg -setactive $guid 2>&1 | Out-Null
-            $planoAtivado = ($LASTEXITCODE -eq 0)
-        }
+# 1) Ja existe um plano Desempenho Maximo (original ou copia de execucao anterior)? Usa ele.
+$linha = powercfg -list 2>&1 | Where-Object { $_ -match "Desempenho M.ximo|Ultimate Performance" } | Select-Object -First 1
+if ($linha -and "$linha" -match $regexGuid) {
+    powercfg -setactive $Matches[1] 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { $planoAtivado = "Desempenho Maximo" }
+}
+# 2) Plano oculto (padrao na maioria dos PCs): cria a partir do modelo e ativa a copia
+if (-not $planoAtivado) {
+    $saida = powercfg -duplicatescheme $guidMaximo 2>&1
+    if ($LASTEXITCODE -eq 0 -and "$saida" -match $regexGuid) {
+        powercfg -setactive $Matches[1] 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $planoAtivado = "Desempenho Maximo" }
     }
+}
+# 3) Fallback: Alto Desempenho (alguns notebooks com Modern Standby bloqueiam o Maximo)
+if (-not $planoAtivado) {
+    powercfg -setactive $guidAlto 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $saida = powercfg -duplicatescheme $guidAlto 2>&1
+        if ("$saida" -match $regexGuid) { powercfg -setactive $Matches[1] 2>&1 | Out-Null }
+    }
+    if ($LASTEXITCODE -eq 0) { $planoAtivado = "Alto Desempenho (Desempenho Maximo indisponivel neste PC)" }
 }
 
 if ($planoAtivado) {
-    Write-Host "    Plano Alto Desempenho ativado." -ForegroundColor Green
+    Write-Host "    Plano $planoAtivado ativado." -ForegroundColor Green
 } else {
-    Write-Warning "    Nao foi possivel ativar o plano Alto Desempenho."
+    Write-Warning "    Nao foi possivel ativar o plano Desempenho Maximo."
 }
 
-# 14. DESATIVAR WIDGETS (Windows 11)
+# 12. DESATIVAR WIDGETS (Windows 11)
 Write-Host "[>] Desativando Widgets..." -ForegroundColor Yellow
 $widgetsPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
 if (!(Test-Path $widgetsPath)) { New-Item -Path $widgetsPath -Force | Out-Null }
@@ -239,7 +210,7 @@ try {
     Write-Warning "    Erro ao desativar Widgets: $($_.Exception.Message)"
 }
 
-# 15. LIMPEZA DE ARQUIVOS TEMPORARIOS
+# 13. LIMPEZA DE ARQUIVOS TEMPORARIOS
 Write-Host "[>] Limpando arquivos temporarios..." -ForegroundColor Yellow
 $tempErros = 0
 @($env:TEMP, "C:\Windows\Temp") | ForEach-Object {
@@ -262,7 +233,7 @@ if ($tempErros -gt 0) {
     Write-Host "    Arquivos temporarios removidos." -ForegroundColor Green
 }
 
-# 16. DESATIVAR MENU DE CONTEXTO NOVO DO WINDOWS 11 (Restaurar classico)
+# 14. DESATIVAR MENU DE CONTEXTO NOVO DO WINDOWS 11 (Restaurar classico)
 Write-Host "[>] Desativando menu de contexto moderno (restaurando classico)..." -ForegroundColor Yellow
 $ctxMenuPath = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
 if (!(Test-Path $ctxMenuPath)) { New-Item -Path $ctxMenuPath -Force | Out-Null }
@@ -275,7 +246,7 @@ try {
     Write-Warning "    Erro ao restaurar menu classico: $($_.Exception.Message)"
 }
 
-# 17. REMOVER ACESSO RAPIDO DO WINDOWS EXPLORER
+# 15. REMOVER ACESSO RAPIDO DO WINDOWS EXPLORER
 Write-Host "[>] Removendo Acesso Rapido do Explorer..." -ForegroundColor Yellow
 $explorerAdv = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
 if (!(Test-Path $explorerAdv)) { New-Item -Path $explorerAdv -Force | Out-Null }
@@ -300,7 +271,7 @@ if ($quickAccessOk) {
     Write-Host "    Acesso Rapido removido e Explorer abre em 'Este Computador'." -ForegroundColor Green
 }
 
-# 18. DESATIVAR CrossDeviceResume (Windows 11 - cross-device/resume)
+# 16. DESATIVAR CrossDeviceResume (Windows 11 - cross-device/resume)
 Write-Host "[>] Desativando CrossDeviceResume..." -ForegroundColor Yellow
 $taskName = "\Microsoft\Windows\Shell\Kill CrossDeviceResume.exe"
 try {
@@ -314,7 +285,7 @@ try {
     Write-Warning "    Erro ao desativar CrossDeviceResume: $($_.Exception.Message)"
 }
 
-# 19. REMOVER HOME E GALERIA DO EXPLORER (Windows 11 24H2)
+# 17. REMOVER HOME E GALERIA DO EXPLORER (Windows 11 24H2)
 Write-Host "[>] Removendo 'Home' e 'Galeria' do Explorer..." -ForegroundColor Yellow
 $homeClsidPath = "HKCU:\Software\Classes\CLSID\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}"
 $galleryClsidPath = "HKCU:\Software\Classes\CLSID\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}"
@@ -340,6 +311,111 @@ try {
 
 if ($homeGalleryOk) {
     Write-Host "    'Home' e 'Galeria' removidos do Explorer." -ForegroundColor Green
+}
+
+# 18. DESATIVAR SERVICOS DESNECESSARIOS
+Write-Host "[>] Desativando servicos desnecessarios..." -ForegroundColor Yellow
+$servicosInuteis = [ordered]@{
+    'WSAIFabricSvc'              = 'Componentes de IA do Windows (Copilot/Recall)'
+    'InventorySvc'               = 'Avaliacao de inventario/compatibilidade (telemetria)'
+    'whesvc'                     = 'Integridade e Experiencias Otimizadas (telemetria)'
+    'DPS'                        = 'Politica de Diagnostico (solucionador de problemas)'
+    'WdiSystemHost'              = 'Host de diagnosticos'
+    'WdiServiceHost'             = 'Host de diagnosticos'
+    'TrkWks'                     = 'Rastreamento de links distribuidos (rede corporativa)'
+    'SSDPSRV'                    = 'Descoberta UPnP'
+    'lmhosts'                    = 'NetBIOS sobre TCP/IP'
+    'iphlpsvc'                   = 'Tuneis IPv6 (Teredo/6to4/IP-HTTPS)'
+    'AMD Crash Defender Service' = 'Coleta de crash do driver AMD'
+}
+# Condicionais: so desativa se o PC nao usa o recurso
+if (@(Get-PnpDevice -Class Image -PresentOnly -ErrorAction SilentlyContinue).Count -eq 0) {
+    $servicosInuteis['StiSvc'] = 'WIA - scanners (nenhum detectado)'
+} else {
+    Write-Host "    Scanner detectado -- StiSvc mantido." -ForegroundColor DarkGray
+}
+if (@(Get-SmbShare -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch '\$$' }).Count -eq 0) {
+    $servicosInuteis['LanmanServer'] = 'Compartilhamento de pastas (nenhuma compartilhada)'
+} else {
+    Write-Host "    Pastas compartilhadas detectadas -- LanmanServer mantido." -ForegroundColor DarkGray
+}
+
+# Backup do estado original (so na primeira execucao, para nunca sobrescrever o original)
+$backupDir  = Join-Path $env:ProgramData "OtimizadorWindows"
+$backupFile = Join-Path $backupDir "backup-servicos.csv"
+if (!(Test-Path $backupFile)) {
+    New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+    $linhas = foreach ($nome in $servicosInuteis.Keys) {
+        $chave = "HKLM:\SYSTEM\CurrentControlSet\Services\$nome"
+        if (Test-Path $chave) { [pscustomobject]@{ Name = $nome; Start = (Get-ItemProperty $chave).Start } }
+    }
+    $splitAtual = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control").SvcHostSplitThresholdInKB
+    $linhas = @($linhas) + [pscustomobject]@{ Name = "__SvcHostSplitThresholdInKB"; Start = $splitAtual }
+    $linhas | Export-Csv $backupFile -NoTypeInformation -Encoding UTF8
+    Write-Host "    Backup salvo em $backupFile" -ForegroundColor DarkGray
+}
+
+$negados = @()
+$desativados = 0
+foreach ($nome in $servicosInuteis.Keys) {
+    $chave = "HKLM:\SYSTEM\CurrentControlSet\Services\$nome"
+    if (!(Get-Service -Name $nome -ErrorAction SilentlyContinue)) { continue }
+    if ((Get-ItemProperty $chave).Start -eq 4) { $desativados++; continue }
+    Stop-Service -Name $nome -Force -ErrorAction SilentlyContinue
+    Set-Service -Name $nome -StartupType Disabled -ErrorAction SilentlyContinue
+    if ((Get-ItemProperty $chave).Start -ne 4) {
+        Set-ItemProperty -Path $chave -Name "Start" -Value 4 -Type DWord -ErrorAction SilentlyContinue
+    }
+    if ((Get-ItemProperty $chave).Start -eq 4) {
+        $desativados++
+        Write-Host ("    [off] {0} - {1}" -f $nome, $servicosInuteis[$nome]) -ForegroundColor DarkGray
+    } else {
+        $negados += $nome
+    }
+}
+
+# Algumas chaves so aceitam escrita da conta SISTEMA: aplica via tarefa temporaria
+if ($negados.Count -gt 0) {
+    $logSistema = Join-Path $backupDir "log-sistema.txt"
+    Remove-Item $logSistema -ErrorAction SilentlyContinue
+    $cmds = foreach ($nome in $negados) {
+        "sc.exe stop '$nome' | Out-Null; Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\$nome' -Name Start -Value 4"
+    }
+    $cmds += "'FIM' | Out-File '$logSistema'"
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(($cmds -join "`n")))
+    try {
+        $acao = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -EncodedCommand $enc"
+        Register-ScheduledTask -TaskName "OtimizadorTemp" -Action $acao -User "SYSTEM" -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName "OtimizadorTemp"
+        $espera = 0
+        while (!(Test-Path $logSistema) -and $espera -lt 60) { Start-Sleep -Milliseconds 500; $espera++ }
+    } catch {
+        Write-Warning "    Erro ao criar tarefa como SISTEMA: $($_.Exception.Message)"
+    } finally {
+        Unregister-ScheduledTask -TaskName "OtimizadorTemp" -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    foreach ($nome in $negados) {
+        if ((Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$nome").Start -eq 4) {
+            $desativados++
+            Write-Host ("    [off] {0} - {1} (via SISTEMA)" -f $nome, $servicosInuteis[$nome]) -ForegroundColor DarkGray
+        } else {
+            Write-Warning "    Nao foi possivel desativar $nome (acesso negado)."
+        }
+    }
+}
+Write-Host "    $desativados servicos desnecessarios desativados." -ForegroundColor Green
+
+# 19. AGRUPAR PROCESSOS SVCHOST
+# Com mais de 3,5 GB de RAM o Windows cria um svchost para cada servico.
+# Subindo o limite acima da RAM instalada, ele volta a agrupar -> bem menos processos.
+Write-Host "[>] Agrupando processos svchost..." -ForegroundColor Yellow
+try {
+    $ramKB = [math]::Ceiling((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1KB)
+    $limite = [int][math]::Min($ramKB + 1048576, [int]::MaxValue)
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control" -Name "SvcHostSplitThresholdInKB" -Value $limite -Type DWord -ErrorAction Stop
+    Write-Host "    svchost agrupado (efeito apos reiniciar)." -ForegroundColor Green
+} catch {
+    Write-Warning "    Erro ao agrupar svchost: $($_.Exception.Message)"
 }
 
 # REINICIAR EXPLORER PARA APLICAR MUDANCAS VISUAIS

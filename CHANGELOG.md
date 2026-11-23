@@ -1,5 +1,22 @@
 # Changelog — otimizador.ps1
 
+## [3.4] — 2026-11-23
+
+### Adicionado
+- **Nova otimização #18 — Serviços desnecessários:** Desativa `WSAIFabricSvc`, `InventorySvc`, `whesvc`, `DPS`, `WdiSystemHost`, `WdiServiceHost`, `TrkWks`, `SSDPSRV`, `lmhosts`, `iphlpsvc` e `AMD Crash Defender Service`. `StiSvc` e `LanmanServer` só são desativados se o PC não tiver scanner nem pastas compartilhadas. Salva backup em `%ProgramData%\OtimizadorWindows` e, quando a chave do serviço só aceita escrita da conta SISTEMA, aplica via tarefa agendada temporária.
+- **Nova otimização #19 — Agrupar svchost:** Define `SvcHostSplitThresholdInKB` acima da RAM instalada, fazendo o Windows agrupar serviços em menos processos `svchost` (testado: 132 → 73 processos).
+- **`reverter-servicos.ps1`:** Restaura os serviços e o svchost a partir do backup. Também anexado às releases.
+
+### Removido
+- **Cortana (antiga #6):** O app foi descontinuado pela Microsoft no Windows 10 e 11. A política `AllowCortana` foi mantida dentro da otimização do Bing (#4).
+- **Ajustes de Rede (antiga #11):** `autotuninglevel=normal` e `rss=enabled` já são o padrão do Windows; a seção não alterava nada.
+- **Desativar compressão de memória (antiga #2):** A compressão é útil em PCs com pouca RAM; o Windows volta a gerenciá-la normalmente.
+
+### Alterado
+- **#2 — SysMain inteligente:** Detecta o tipo do disco do sistema. Com HDD, ou com tipo não identificado, o SysMain é mantido. Com SSD, só é desativado se houver 16 GB de RAM ou mais, pois o SysMain também gerencia a compressão de memória.
+- **#11 — Plano de energia:** Agora ativa **Desempenho Máximo** (Ultimate Performance). Reaproveita um plano existente, cria a partir do modelo oculto se necessário e só cai para Alto Desempenho se o PC bloquear o Máximo.
+- Otimizações renumeradas (continuam 19 no total).
+
 ## [3.3] — 2026-08-12
 
 ### Corrigido
