@@ -18,7 +18,7 @@
 
 ### 🖱️ Opção 1 — EXE (a mais fácil)
 
-1. Baixe o arquivo **`otimizador.exe`**
+1. Baixe o **`otimizador.exe`** na [última release](https://github.com/1155dosilicon/otimizador-windows/releases/latest)
 2. Clique com o botão direito → **Executar como administrador**
 3. O UAC abre automaticamente. Confirme e pronto.
 
@@ -114,7 +114,18 @@
 | Acesso Rápido | `HubMode` = 0, `LaunchTo` = 0 no Explorer\Advanced |
 | CrossDeviceResume | Deletar tarefa: `schtasks /delete /tn "\Microsoft\Windows\Shell\Kill CrossDeviceResume.exe" /f` |
 | Home e Galeria | `System.IsPinnedToNameSpaceTree` = 1 nos CLSIDs `{f874310e-...}` e `{e88865ea-...}` (HKCU) |
-| Serviços e svchost (#18, #19) | Executar `reverter-servicos.ps1` como Administrador e reiniciar (usa o backup salvo) |
+| Serviços e svchost (#18, #19) | Executar `reverter-servicos.ps1` (ver abaixo) |
+
+### 🧩 Reverter serviços e svchost
+
+Baixe o **`reverter-servicos.ps1`** na [última release](https://github.com/1155dosilicon/otimizador-windows/releases/latest) e, no **PowerShell como Administrador**:
+
+```powershell
+Set-ExecutionPolicy Unrestricted -Scope Process -Force
+.\reverter-servicos.ps1
+```
+
+Ele restaura cada serviço e o agrupamento do svchost a partir do backup salvo em `%ProgramData%\OtimizadorWindows\backup-servicos.csv`. Reinicie o PC em seguida.
 
 ---
 
