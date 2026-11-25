@@ -17,12 +17,33 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # No workflow_dispatch, constroi a partir da tag informada (nao da branch).
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Gerar otimizador.exe
         shell: powershell
         run: |
+          # O runner windows-latest costuma vir sem o PSGallery registrado.
+          # Set-PSRepository so altera um repositorio existente e falha com
+          # "No repository with the name 'PSGallery' was found" (foi o que
+          # quebrou a release da v3.4.1). Registra primeiro, depois ajusta.
+          if (!(Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default -ErrorAction SilentlyContinue
+          }
+          if (!(Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Name PSGallery `
+              -SourceLocation https://www.powershellgallery.com/api/v2 `
+              -InstallationPolicy Trusted
+          }
           Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name ps2exe -Scope CurrentUser -Force
+
+          # Install-Module precisa do provedor NuGet; bootstrap sem interacao.
+          if (!(Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+            Install-PackageProvider -Name NuGet -Force -ForceBootstrap -Scope CurrentUser
+          }
+
+          Install-Module -Name ps2exe -Scope CurrentUser -Force -AllowClobber -SkipPublisherCheck
           .\build-exe.ps1
           if (!(Test-Path .\otimizador.exe)) { exit 1 }
 
