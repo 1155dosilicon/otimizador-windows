@@ -1,5 +1,14 @@
 # Changelog — otimizador.ps1
 
+## [3.4.1] — 2026-11-24
+
+### Corrigido
+- **EXE abria janela preta (bug crítico da 3.4):** `build-exe.ps1` passava `-noOutput` e `-noError` para o `ps2exe`. Essas flags **não** controlam a geração de arquivos `.log`/`.err` (como o comentário do script sugeria): na documentação e no código do `ps2exe`, elas removem a saída padrão e de erro do executável — o método `Write` do host (usado pelo `Write-Host`) é gerado vazio. Resultado: o `.exe` executava as 19 otimizações corretamente, mas **não desenhava nada na tela**, deixando os prompts de `Read-Host` invisíveis e travando a janela no fim. Removidas as duas flags.
+- **Janela fechava ao terminar:** adicionada pausa final (`Read-Host` "Pressione ENTER") para o usuário conseguir ler o resultado antes da janela fechar.
+
+### Nota
+- O `otimizador.ps1` em si **não** tinha defeito nesta versão. O problema era exclusivamente do build.
+
 ## [3.4] — 2026-11-23
 
 ### Adicionado

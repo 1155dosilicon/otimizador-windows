@@ -436,3 +436,8 @@ $resposta = Read-Host "Deseja reiniciar o computador agora? (S/N)"
 if ($resposta -eq "S" -or $resposta -eq "s") {
     Restart-Computer -Force
 }
+
+# Pausa final: mantem a janela aberta para o usuario LER o resultado.
+# Sem isso, a janela fecha assim que o script termina e ele nao ve nada.
+Write-Host ""
+Read-Host "Pressione ENTER para fechar esta janela" | Out-Null

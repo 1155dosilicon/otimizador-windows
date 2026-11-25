@@ -27,19 +27,23 @@ Write-Host "[>] Gerando $outputFile ..." -ForegroundColor Cyan
 
 # Parametros:
 #   -requireAdmin: embute manifest pedindo elevacao (UAC)
-#   -noOutput: nao gera o .log de saida
-#   -noError: nao gera o .err de erro
 #   -title: nome que aparece no UAC / Task Manager
 #   -version: versao do EXE
+#
+# ATENCAO: NAO usar -noOutput nem -noError aqui.
+# Na documentacao do ps2exe essas flags significam:
+#   noOutput = o executavel NAO gera saida padrao (inclui Write-Host/verbose/informacao)
+#   noError  = o executavel NAO gera saida de erro (inclui warning/debug)
+# Ou seja: com elas o .exe abre a janela, executa tudo e nao desenha nada na tela.
+# Era exatamente esse o bug da v3.4 (janela preta, Read-Host invisivel).
+# Elas NAO tem relacao com gerar arquivo .log/.err.
 
 Invoke-ps2exe -InputFile $inputFile `
               -OutputFile $outputFile `
               -requireAdmin `
-              -noOutput `
-              -noError `
               -title "Otimizador Windows" `
               -description "Script de otimizacao pos-instalacao Windows 10/11" `
-              -version "3.4.0.0" `
+              -version "3.4.1.0" `
               -product "Otimizador Windows" `
               -company ""
 

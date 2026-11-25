@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/versão-3.4-blue?style=for-the-badge" alt="Versão 3.4">
+  <img src="https://img.shields.io/badge/versão-3.4.1-blue?style=for-the-badge" alt="Versão 3.4.1">
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 10 | 11">
   <img src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?style=for-the-badge&logo=powershell&logoColor=white" alt="PowerShell 5.1+">
   <img src="https://img.shields.io/badge/licença-MIT-green?style=for-the-badge" alt="MIT License">
